@@ -1,113 +1,96 @@
-BreakPointBot
-=============
-A Discord bot for tracking class breaks and lunch, with live countdown
-timers and daily lunch menus from Dalanissen and Livet Restaurant Solna.
+# BreakPointBot
 
+A Discord bot for tracking class breaks and lunch, with live countdown timers and daily lunch menus from Dalanissen and Livet Restaurant Solna.
 
-SETUP
------
-1. Install dependencies:
-      pip install -r requirements.txt
+## Setup
 
-2. Create a .env file in this folder:
-      DISCORD_TOKEN=your_bot_token_here
-      ANTHROPIC_API_KEY=your_anthropic_key_here
+**1. Install dependencies:**
+```bash
+pip install -r requirements.txt
+```
 
-   ANTHROPIC_API_KEY is used to OCR the Livet weekly menu image.
-   You can get a key at https://console.anthropic.com
+**2. Create a `.env` file in this folder:**
+```
+DISCORD_TOKEN=your_bot_token_here
+ANTHROPIC_API_KEY=your_anthropic_key_here
+```
+`ANTHROPIC_API_KEY` is used to OCR the Livet weekly menu image. Get a key at [console.anthropic.com](https://console.anthropic.com).
 
-3. Discord Developer Portal (discord.com/developers/applications):
-   - Create an application and add a Bot
-   - Under Bot > Privileged Gateway Intents, enable:
-       Message Content Intent
-   - Under OAuth2 > URL Generator, select scopes:
-       bot, applications.commands
-   - Select permissions:
-       Send Messages, Manage Messages, Read Message History
-   - Copy the generated URL and open it to invite the bot to your server
+**3. Discord Developer Portal** ([discord.com/developers/applications](https://discord.com/developers/applications)):
+- Create an application and add a Bot
+- Under **Bot > Privileged Gateway Intents**, enable:
+  - Message Content Intent
+- Under **OAuth2 > URL Generator**, select scopes:
+  - `bot`, `applications.commands`
+- Select permissions:
+  - Send Messages, Manage Messages, Read Message History
+- Or use the direct invite link: [Invite BreakPointBot](https://discord.com/oauth2/authorize?client_id=1493836495038054481)
 
-4. Run the bot:
-      python bot.py
+**4. Run the bot:**
+```bash
+python bot.py
+```
 
+## Commands
 
-COMMANDS
---------
-/break [minutes]
-    Start a break timer (default: 10 minutes).
-    Clears all previous bot messages in the channel, then posts a live
-    countdown with a progress bar. Bar turns green > yellow > red.
+| Command | Description |
+|---------|-------------|
+| `/break [minutes]` | Start a break timer (default: 10 min). Clears previous bot messages, posts a live countdown with a progress bar. Bar turns green → yellow → red. |
+| `/lunch [minutes]` | Start a lunch timer (default: 60 min). Same as `/break`, but first posts today's lunch menu from both restaurants. Menu is removed when the bar hits red. |
+| `/stop` | Cancel the active timer and clear bot messages from the channel. |
+| `/menu [restaurant] [day]` | Send today's lunch menu to your DMs. |
+| `/ping` | Toggle @mention when a timer ends. Off by default. |
+| `/lock` | *(Admin only)* Lock the channel so non-bot messages are automatically deleted. Run again to unlock. Requires Manage Channels permission. |
+| `/help` | Show all available commands (visible only to you). |
 
-/lunch [minutes]
-    Start a lunch timer (default: 60 minutes).
-    Same as /break, but first posts today's lunch menu from both
-    restaurants. The menu is automatically removed when the bar hits red.
+### `/menu` options
 
-/stop
-    Cancel the active timer and clear bot messages from the channel.
+| Option | Values | Default |
+|--------|--------|---------|
+| `restaurant` | `dalanissen` \| `livet` | both |
+| `day` | `-4` to `+4` | today |
 
-/menu [restaurant] [day]
-    Send today's lunch menu to your DMs.
-    Options:
-      restaurant  dalanissen | livet  (default: both)
-      day         -4 to +4            (days within the current Mon-Fri week)
-    Examples:
-      /menu                   -> both restaurants today, sent to DMs
-      /menu restaurant:livet  -> only Livet, sent to DMs
-      /menu day:1             -> tomorrow's menu, sent to DMs
+**Examples:**
+```
+/menu                    → both restaurants, today, sent to DMs
+/menu restaurant:livet   → only Livet, sent to DMs
+/menu day:1              → tomorrow's menu, sent to DMs
+```
 
-/ping
-    Toggle @mention when a timer ends. Off by default.
+## Restaurants
 
-/lock
-    (Admin only) Lock the channel so non-bot messages are automatically
-    deleted. Run again to unlock. Requires Manage Channels permission.
+**Dalanissen** — [dalanisse.se/lunchmeny](https://www.dalanisse.se/lunchmeny/)
+Menu scraped directly from the website. Shows today's dishes + "Serveras hela veckan" section.
 
-/help
-    Show all available commands (visible only to you).
+**Livet Restaurant Solna** — [livetbrand.com](https://www.livetbrand.com/har-finns-livet/livet-restaurant-solna/)
+Menu is published as a weekly image. Read via Claude vision (Anthropic API).
 
+## Timer Behaviour
 
-RESTAURANTS
------------
-Dalanissen       https://www.dalanisse.se/lunchmeny/
-                 Menu scraped directly from the website.
-                 Shows today's dishes + "Serveras hela veckan" section.
+- Updates every **20 seconds**
+- Progress bar: **green** (0–50%) → **yellow** (50–75%) → **red** (75–100%)
+- On `/lunch`: menu posts above the timer; deleted automatically when bar turns red so the channel stays clean
+- When done: shows **"BREAK IS OVER! / Back to class."**
+- Starting a new `/break` or `/lunch` purges all previous bot messages first
 
-Livet Restaurant https://www.livetbrand.com/har-finns-livet/livet-restaurant-solna/
-Solna            Menu is published as a weekly image.
-                 Read via Claude vision (Anthropic API).
+## Menu Cache
 
+Fetched menus are cached in memory keyed on `(date, restaurant)`. The first `/menu` or `/lunch` call of the day hits the websites; all subsequent requests that day return the cached result instantly. Entries expire after **7 days**. The cache resets on bot restart.
 
-TIMER BEHAVIOUR
----------------
-- Updates every 20 seconds
-- Progress bar:  green (0-50%) -> yellow (50-75%) -> red (75-100%)
-- On /lunch: menu posts above the timer; deleted automatically when bar
-  turns red so the channel stays clean
-- When done: shows "BREAK IS OVER! / Back to class."
-- Starting a new /break or /lunch purges all previous bot messages first
+## Files
 
+| File | Description |
+|------|-------------|
+| `bot.py` | Main bot (all logic) |
+| `requirements.txt` | Python dependencies |
+| `.env` | Your tokens (not committed to git — keep private!) |
+| `debug_menu.py` | Dev utility: test menu scraping without running the bot |
 
-MENU CACHE
-----------
-Fetched menus are cached in memory keyed on (date, restaurant).
-The first /menu or /lunch call of the day hits the websites; all
-subsequent requests that day return the cached result instantly.
-Entries expire after 7 days. The cache resets on bot restart.
+## Requirements
 
-
-FILES
------
-bot.py            Main bot (all logic)
-requirements.txt  Python dependencies
-.env              Your tokens (not committed to git -- keep private!)
-debug_menu.py     Dev utility: test menu scraping without running the bot
-
-
-REQUIREMENTS
-------------
-Python 3.11+
-discord.py >= 2.3
-aiohttp
-beautifulsoup4
-anthropic
-python-dotenv
+- Python 3.11+
+- discord.py >= 2.3
+- aiohttp
+- beautifulsoup4
+- anthropic
+- python-dotenv
