@@ -1,6 +1,6 @@
 """
 BreakPointBot - Discord break & lunch timer bot
-90s ASCII terminal aesthetic with ANSI colors
+Author: Christofer Lindholm DE25
 """
 
 import discord
@@ -432,9 +432,9 @@ def _dn_items(items: list[str]) -> list[str]:
         dish, price = item.rsplit("  ", 1) if "  " in item else (item, "")
         wrapped = wrap_text(dish)
         for i, line in enumerate(wrapped):
-            out.append(f"{WH if i == 0 else NW}{line}{R}")
+            out.append(f"{WH}{line}{R}" if i == 0 else f"  {NW}{line}{R}")
         if price:
-            out.append(f"{YL}{price}{R}")
+            out.append(f"  {YL}{price}{R}")
         out.append("")
     return out
 
