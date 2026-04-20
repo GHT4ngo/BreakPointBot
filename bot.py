@@ -646,9 +646,38 @@ async def cmd_lunch(interaction: discord.Interaction, minutes: int = 60, end: st
 
 
 async def _purge_channel(channel: discord.TextChannel) -> None:
-    """Bulk-delete bot messages in channel. Silently handles errors."""
+    """Delete all bot messages in the channel.
+
+    Bulk-deletes messages newer than 14 days (Discord limit) and
+    individually deletes older ones so nothing is left behind.
+    """
     try:
-        await channel.purge(limit=100, check=lambda m: m.author == bot.user)
+        cutoff   = discord.utils.utcnow() - datetime.timedelta(days=14)
+        recent   = []
+        old      = []
+
+        async for msg in channel.history(limit=500):
+            if msg.author != bot.user:
+                continue
+            if msg.created_at > cutoff:
+                recent.append(msg)
+            else:
+                old.append(msg)
+
+        # Bulk-delete recent messages (requires 2+; Discord rejects bulk-delete of 1)
+        if len(recent) >= 2:
+            await channel.delete_messages(recent)
+        elif len(recent) == 1:
+            await recent[0].delete()
+
+        # Individually delete messages older than 14 days
+        for msg in old:
+            try:
+                await msg.delete()
+                await asyncio.sleep(0.5)  # avoid hitting rate limits
+            except discord.HTTPException:
+                pass
+
     except (discord.Forbidden, discord.HTTPException):
         pass
 
