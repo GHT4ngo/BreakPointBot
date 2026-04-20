@@ -10,13 +10,16 @@ import datetime
 import os
 import re
 import base64
+import sys
+import subprocess
 from dotenv import load_dotenv
 import aiohttp
 from bs4 import BeautifulSoup
 
 load_dotenv()
-TOKEN            = os.getenv("DISCORD_TOKEN")
+TOKEN             = os.getenv("DISCORD_TOKEN")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+REPO_DIR          = os.path.dirname(os.path.abspath(__file__))
 
 # ─── ANSI Colors (used inside ```ansi code blocks) ─────────────────────────
 E   = "\u001b"
@@ -820,6 +823,8 @@ async def cmd_help(interaction: discord.Interaction):
             "Toggle @mention when a timer ends."),
         row("/lock", "",
             "Lock this channel (admin) -- auto-deletes non-bot messages."),
+        row("/update", "",
+            "Pull latest code from GitHub and restart (admin)."),
         row("/help", "",
             "Show this message."),
         "```",
@@ -833,6 +838,52 @@ async def cmd_help(interaction: discord.Interaction):
 async def lock_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
     await interaction.response.send_message(
         "You need **Manage Channels** permission to use this.", ephemeral=True
+    )
+
+
+@bot.tree.command(name="update", description="Pull latest code from GitHub and restart (admin)")
+@app_commands.checks.has_permissions(manage_guild=True)
+async def cmd_update(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+
+    try:
+        result = subprocess.run(
+            ["git", "pull", "origin", "main"],
+            cwd=REPO_DIR,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        output = (result.stdout + result.stderr).strip() or "No output."
+        ok = result.returncode == 0
+    except FileNotFoundError:
+        await interaction.followup.send(
+            f"```ansi\n{RD}[ UPDATE ]{R}  git is not installed.\n```", ephemeral=True
+        )
+        return
+    except Exception as e:
+        await interaction.followup.send(
+            f"```ansi\n{RD}[ UPDATE ]{R}  {e}\n```", ephemeral=True
+        )
+        return
+
+    status = GN if ok else RD
+    label  = "Update successful — restarting…" if ok else "Update failed."
+    await interaction.followup.send(
+        f"```ansi\n{status}[ UPDATE ]{R}  {label}\n\n{DIM}{output}{R}\n```",
+        ephemeral=True,
+    )
+
+    if ok:
+        # Small delay so the message is delivered before the process exits
+        await asyncio.sleep(1)
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+
+
+@cmd_update.error
+async def update_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+    await interaction.response.send_message(
+        "You need **Manage Server** permission to use this.", ephemeral=True
     )
 
 
