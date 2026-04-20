@@ -13,14 +13,32 @@ The bot runs 24/7 on a hosted server — no installation needed to use it.
 
 | Command | Description |
 |---------|-------------|
-| `/break [minutes]` | Start a break timer (default: 10 min). Clears previous bot messages, posts a live countdown with a progress bar. Bar turns green → yellow → red. |
-| `/lunch [minutes]` | Start a lunch timer (default: 60 min). Same as `/break`, but first posts today's lunch menu from both restaurants. Menu is removed when the bar hits red. |
+| `/break [minutes] [end]` | Start a break timer (default: 10 min). Use `end:HH:MM` to set a stop time instead of a duration. |
+| `/lunch [minutes] [end]` | Start a lunch timer (default: 60 min). Posts today's lunch menu above the timer. Use `end:HH:MM` to set a stop time. |
+| `/extend <minutes>` | Add or remove minutes from the active timer. Use positive (`5`) to add or negative (`-5`) to cut time. |
 | `/stop` | Cancel the active timer and clear bot messages from the channel. |
 | `/menu [restaurant] [day]` | Send today's lunch menu to your DMs. |
 | `/ping` | Toggle @mention when a timer ends. Off by default. |
 | `/lock` | *(Admin only)* Lock the channel so non-bot messages are automatically deleted. Run again to unlock. Requires Manage Channels permission. |
 | `/update` | *(Admin only)* Pull latest code from GitHub and restart the bot. Requires Manage Server permission. |
 | `/help` | Show all available commands (visible only to you). |
+
+### `/break` and `/lunch` options
+
+| Option | Example | Description |
+|--------|---------|-------------|
+| `minutes` | `/break minutes:15` | Duration in minutes (default: 10 for break, 60 for lunch) |
+| `end` | `/break end:14:30` | Set an exact stop time — overrides minutes |
+
+**Examples:**
+```
+/break                   → 10 minute break
+/break minutes:15        → 15 minute break
+/break end:14:30         → break ends at 14:30
+/lunch end:12:00         → lunch ends at 12:00
+/extend 5                → add 5 minutes to the running timer
+/extend -10              → cut 10 minutes from the running timer
+```
 
 ### `/menu` options
 
