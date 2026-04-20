@@ -698,7 +698,7 @@ async def _start_timer(interaction: discord.Interaction, kind: str, minutes: int
 
     start_time = now
     ping_on    = bot.ping_enabled.get(interaction.guild_id, False)
-    mention    = interaction.user.mention if ping_on else None
+    mention    = "@everyone" if ping_on else None
 
     # Cancel existing task (messages cleared by purge below)
     existing = bot.active_timers.pop(interaction.channel_id, None)
@@ -809,7 +809,7 @@ async def cmd_ping(interaction: discord.Interaction):
     gid       = interaction.guild_id
     new_state = not bot.ping_enabled.get(gid, False)
     bot.ping_enabled[gid] = new_state
-    state_str = f"{GN}ON{R}" if new_state else f"{RD}OFF{R}"
+    state_str = f"{GN}ON{R} — will ping @everyone" if new_state else f"{RD}OFF{R}"
     await interaction.response.send_message(
         f"```ansi\n{CY}[ BreakPointBot ]{R}  Pings are now {state_str}\n```",
         ephemeral=True,
@@ -902,7 +902,7 @@ async def cmd_help(interaction: discord.Interaction):
             "  restaurant: dalanissen | livet (default: both)\n"
             "  day: -4 to +4 within this week (0 = today)"),
         row("/ping", "",
-            "Toggle @mention when a timer ends."),
+            "Toggle @everyone ping when a timer ends."),
         row("/lock", "",
             "Lock this channel (admin) -- auto-deletes non-bot messages."),
         row("/update", "",

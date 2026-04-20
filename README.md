@@ -18,7 +18,7 @@ The bot runs 24/7 on a hosted server — no installation needed to use it.
 | `/extend <minutes>` | Add or remove minutes from the active timer. Use positive (`5`) to add or negative (`-5`) to cut time. |
 | `/stop` | Cancel the active timer and clear bot messages from the channel. |
 | `/menu [restaurant] [day]` | Send today's lunch menu to your DMs. |
-| `/ping` | Toggle @mention when a timer ends. Off by default. |
+| `/ping` | Toggle @everyone ping when a timer ends. Off by default. |
 | `/lock` | *(Admin only)* Lock the channel so non-bot messages are automatically deleted. Run again to unlock. Requires Manage Channels permission. |
 | `/update` | *(Admin only)* Pull latest code from GitHub and restart the bot. Requires Manage Server permission. |
 | `/help` | Show all available commands (visible only to you). |
