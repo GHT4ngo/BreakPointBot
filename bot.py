@@ -3,6 +3,7 @@ BreakPointBot - Discord break & lunch timer bot
 Author: Christofer Lindholm DE25
 """
 
+from __future__ import annotations
 import discord
 from discord import app_commands
 import asyncio
