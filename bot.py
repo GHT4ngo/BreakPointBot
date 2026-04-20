@@ -581,28 +581,38 @@ async def run_timer(
     channel: discord.TextChannel,
     message: discord.Message,
     kind: str,
-    total_secs: int,
-    end_time: datetime.datetime,
+    channel_id: int,
+    start_time: datetime.datetime,
     mention: str | None,
     menu_messages: list[discord.Message] | None = None,
 ):
     UPDATE_INTERVAL = 20  # seconds between edits
-    elapsed      = 0
     menu_deleted = False
 
-    while elapsed < total_secs:
+    while True:
         await asyncio.sleep(UPDATE_INTERVAL)
-        elapsed  += UPDATE_INTERVAL
-        remaining = max(total_secs - elapsed, 0)
+
+        timer = bot.active_timers.get(channel_id)
+        if not timer:
+            return
+
+        now        = datetime.datetime.now()
+        end_time   = timer["end_time"]
+        total_secs = max((end_time - start_time).total_seconds(), 1)
+        elapsed    = (now - start_time).total_seconds()
+        remaining  = (end_time - now).total_seconds()
 
         # Delete menu when bar turns red (75% elapsed)
         if not menu_deleted and menu_messages and elapsed / total_secs >= 0.75:
             await _delete_messages(menu_messages)
             menu_deleted = True
 
+        if remaining <= 0:
+            break
+
         try:
             await message.edit(
-                content=build_timer_msg(kind, remaining, total_secs, end_time)
+                content=build_timer_msg(kind, int(remaining), int(total_secs), end_time)
             )
         except (discord.NotFound, discord.HTTPException):
             return
@@ -612,21 +622,27 @@ async def run_timer(
     except (discord.NotFound, discord.HTTPException):
         pass
 
-    bot.active_timers.pop(channel.id, None)
+    bot.active_timers.pop(channel_id, None)
 
 
 # ─── Slash Commands ────────────────────────────────────────────────────────
 
 @bot.tree.command(name="break", description="Start a break timer (default 10 min)")
-@app_commands.describe(minutes="Break length in minutes (default: 10)")
-async def cmd_break(interaction: discord.Interaction, minutes: int = 10):
-    await _start_timer(interaction, "BREAK", minutes)
+@app_commands.describe(
+    minutes="Break length in minutes (default: 10)",
+    end="End time as HH:MM, e.g. 14:30 — overrides minutes",
+)
+async def cmd_break(interaction: discord.Interaction, minutes: int = 10, end: str = None):
+    await _start_timer(interaction, "BREAK", minutes, end)
 
 
 @bot.tree.command(name="lunch", description="Start a lunch timer (default 60 min)")
-@app_commands.describe(minutes="Lunch length in minutes (default: 60)")
-async def cmd_lunch(interaction: discord.Interaction, minutes: int = 60):
-    await _start_timer(interaction, "LUNCH", minutes)
+@app_commands.describe(
+    minutes="Lunch length in minutes (default: 60)",
+    end="End time as HH:MM, e.g. 12:00 — overrides minutes",
+)
+async def cmd_lunch(interaction: discord.Interaction, minutes: int = 60, end: str = None):
+    await _start_timer(interaction, "LUNCH", minutes, end)
 
 
 async def _purge_channel(channel: discord.TextChannel) -> None:
@@ -637,16 +653,50 @@ async def _purge_channel(channel: discord.TextChannel) -> None:
         pass
 
 
-async def _start_timer(interaction: discord.Interaction, kind: str, minutes: int):
-    if minutes < 1 or minutes > 480:
-        await interaction.response.send_message(
-            f"```ansi\n{RD}[ ERROR ]{R}  Duration must be 1-480 minutes.\n```",
-            ephemeral=True,
-        )
-        return
+def _parse_end_time(end_str: str) -> datetime.datetime | None:
+    """Parse HH:MM (or H:MM) into a datetime today. Returns tomorrow's time if already past."""
+    for fmt in ("%H:%M", "%H.%M"):
+        try:
+            t = datetime.datetime.strptime(end_str.strip(), fmt)
+            now = datetime.datetime.now()
+            end = now.replace(hour=t.hour, minute=t.minute, second=0, microsecond=0)
+            if end <= now:
+                end += datetime.timedelta(days=1)
+            return end
+        except ValueError:
+            continue
+    return None
 
-    total_secs = minutes * 60
-    end_time   = datetime.datetime.now() + datetime.timedelta(seconds=total_secs)
+
+async def _start_timer(interaction: discord.Interaction, kind: str, minutes: int, end: str | None = None):
+    now = datetime.datetime.now()
+
+    if end is not None:
+        end_time = _parse_end_time(end)
+        if end_time is None:
+            await interaction.response.send_message(
+                f"```ansi\n{RD}[ ERROR ]{R}  Invalid time — use HH:MM, e.g. 14:30.\n```",
+                ephemeral=True,
+            )
+            return
+        total_secs = int((end_time - now).total_seconds())
+        if total_secs < 60:
+            await interaction.response.send_message(
+                f"```ansi\n{RD}[ ERROR ]{R}  End time must be at least 1 minute from now.\n```",
+                ephemeral=True,
+            )
+            return
+    else:
+        if minutes < 1 or minutes > 480:
+            await interaction.response.send_message(
+                f"```ansi\n{RD}[ ERROR ]{R}  Duration must be 1-480 minutes.\n```",
+                ephemeral=True,
+            )
+            return
+        total_secs = minutes * 60
+        end_time   = now + datetime.timedelta(seconds=total_secs)
+
+    start_time = now
     ping_on    = bot.ping_enabled.get(interaction.guild_id, False)
     mention    = interaction.user.mention if ping_on else None
 
@@ -682,12 +732,13 @@ async def _start_timer(interaction: discord.Interaction, kind: str, minutes: int
         pass
 
     task = asyncio.create_task(
-        run_timer(interaction.channel, timer_msg, kind, total_secs, end_time, mention, menu_messages)
+        run_timer(interaction.channel, timer_msg, kind, interaction.channel_id, start_time, mention, menu_messages)
     )
     bot.active_timers[interaction.channel_id] = {
         "task": task,
         "message": timer_msg,
         "menu_messages": menu_messages,
+        "end_time": end_time,
     }
 
 
@@ -781,6 +832,33 @@ async def cmd_lock(interaction: discord.Interaction):
     )
 
 
+@bot.tree.command(name="extend", description="Add or remove minutes from the active timer")
+@app_commands.describe(minutes="Minutes to add (e.g. 5) or remove (e.g. -5)")
+async def cmd_extend(interaction: discord.Interaction, minutes: int):
+    timer = bot.active_timers.get(interaction.channel_id)
+    if not timer:
+        await interaction.response.send_message(
+            f"```ansi\n{YL}[ BreakPointBot ]{R}  No active timer in this channel.\n```",
+            ephemeral=True,
+        )
+        return
+
+    new_end = timer["end_time"] + datetime.timedelta(minutes=minutes)
+    if new_end <= datetime.datetime.now() + datetime.timedelta(seconds=30):
+        await interaction.response.send_message(
+            f"```ansi\n{RD}[ ERROR ]{R}  Can't reduce timer past the current time.\n```",
+            ephemeral=True,
+        )
+        return
+
+    timer["end_time"] = new_end
+    sign = "+" if minutes >= 0 else ""
+    await interaction.response.send_message(
+        f"```ansi\n{CY}[ BreakPointBot ]{R}  Timer {sign}{minutes} min — ends at {new_end.strftime('%H:%M')}.\n```",
+        ephemeral=True,
+    )
+
+
 @bot.tree.command(name="stop", description="Cancel the active timer in this channel")
 async def cmd_stop(interaction: discord.Interaction):
     existing = bot.active_timers.pop(interaction.channel_id, None)
@@ -807,13 +885,16 @@ async def cmd_help(interaction: discord.Interaction):
         f"{MG}BREAKPOINTBOT{R}  {DIM}-- commands --{R}",
         f"{MG}──────────────────────────────{R}",
         "",
-        row("/break", "[minutes]",
+        row("/break", "[minutes] [end]",
             "Start a break timer (default 10 min).\n"
-            "  Clears previous bot messages and posts a live countdown."),
-        row("/lunch", "[minutes]",
+            "  Use end: to set a stop time, e.g. end:14:30."),
+        row("/lunch", "[minutes] [end]",
             "Start a lunch timer (default 60 min).\n"
             "  Posts today's lunch menu above the timer.\n"
-            "  Menu is removed when the bar turns red."),
+            "  Use end: to set a stop time, e.g. end:12:00."),
+        row("/extend", "<minutes>",
+            "Add or remove minutes from the active timer.\n"
+            "  e.g. /extend 5  or  /extend -5"),
         row("/stop", "",
             "Cancel the active timer and clear bot messages."),
         row("/menu", "[restaurant] [day]",
