@@ -2,34 +2,12 @@
 
 A Discord bot for tracking class breaks and lunch, with live countdown timers and daily lunch menus from Dalanissen and Livet Restaurant Solna.
 
-## Setup
+**Invite the bot directly to your server:**
+[Invite BreakPointBot](https://discord.com/oauth2/authorize?client_id=1493836495038054481)
 
-**1. Install dependencies:**
-```bash
-pip install -r requirements.txt
-```
+The bot runs 24/7 on a hosted server — no installation needed to use it.
 
-**2. Create a `.env` file in this folder:**
-```
-DISCORD_TOKEN=your_bot_token_here
-ANTHROPIC_API_KEY=your_anthropic_key_here
-```
-`ANTHROPIC_API_KEY` is used to OCR the Livet weekly menu image. Get a key at [console.anthropic.com](https://console.anthropic.com).
-
-**3. Discord Developer Portal** ([discord.com/developers/applications](https://discord.com/developers/applications)):
-- Create an application and add a Bot
-- Under **Bot > Privileged Gateway Intents**, enable:
-  - Message Content Intent
-- Under **OAuth2 > URL Generator**, select scopes:
-  - `bot`, `applications.commands`
-- Select permissions:
-  - Send Messages, Manage Messages, Read Message History
-- Or use the direct invite link: [Invite BreakPointBot](https://discord.com/oauth2/authorize?client_id=1493836495038054481)
-
-**4. Run the bot:**
-```bash
-python bot.py
-```
+---
 
 ## Commands
 
@@ -41,6 +19,7 @@ python bot.py
 | `/menu [restaurant] [day]` | Send today's lunch menu to your DMs. |
 | `/ping` | Toggle @mention when a timer ends. Off by default. |
 | `/lock` | *(Admin only)* Lock the channel so non-bot messages are automatically deleted. Run again to unlock. Requires Manage Channels permission. |
+| `/update` | *(Admin only)* Pull latest code from GitHub and restart the bot. Requires Manage Server permission. |
 | `/help` | Show all available commands (visible only to you). |
 
 ### `/menu` options
@@ -57,6 +36,8 @@ python bot.py
 /menu day:1              → tomorrow's menu, sent to DMs
 ```
 
+---
+
 ## Restaurants
 
 **Dalanissen** — [dalanisse.se/lunchmeny](https://www.dalanisse.se/lunchmeny/)
@@ -64,6 +45,8 @@ Menu scraped directly from the website. Shows today's dishes + "Serveras hela ve
 
 **Livet Restaurant Solna** — [livetbrand.com](https://www.livetbrand.com/har-finns-livet/livet-restaurant-solna/)
 Menu is published as a weekly image. Read via Claude vision (Anthropic API).
+
+---
 
 ## Timer Behaviour
 
@@ -73,24 +56,97 @@ Menu is published as a weekly image. Read via Claude vision (Anthropic API).
 - When done: shows **"BREAK IS OVER! / Back to class."**
 - Starting a new `/break` or `/lunch` purges all previous bot messages first
 
+---
+
 ## Menu Cache
 
 Fetched menus are cached in memory keyed on `(date, restaurant)`. The first `/menu` or `/lunch` call of the day hits the websites; all subsequent requests that day return the cached result instantly. Entries expire after **7 days**. The cache resets on bot restart.
+
+---
+
+## Self-hosting
+
+If you want to run your own instance of the bot:
+
+### Requirements
+
+- Python 3.9+
+- discord.py >= 2.3
+- aiohttp, beautifulsoup4, anthropic, python-dotenv
+
+### Local setup
+
+**1. Clone and install dependencies:**
+```bash
+git clone https://github.com/GHT4ngo/BreakPointBot.git
+cd BreakPointBot
+pip install -r requirements.txt
+```
+
+**2. Create a `.env` file:**
+```
+DISCORD_TOKEN=your_bot_token_here
+ANTHROPIC_API_KEY=your_anthropic_key_here
+```
+`ANTHROPIC_API_KEY` is used to OCR the Livet weekly menu image. Get a key at [console.anthropic.com](https://console.anthropic.com).
+
+**3. Discord Developer Portal** ([discord.com/developers/applications](https://discord.com/developers/applications)):
+- Create an application and add a Bot
+- Under **Bot > Privileged Gateway Intents**, enable **Message Content Intent**
+- Under **OAuth2 > URL Generator**, select scopes: `bot`, `applications.commands`
+- Select permissions: Send Messages, Manage Messages, Read Message History
+
+**4. Run:**
+```bash
+python bot.py
+```
+
+### Hosting on a server (24/7)
+
+To keep the bot online without leaving your computer running, host it on a server. The bot runs on Oracle Cloud Free Tier (always free).
+
+**Set up as a systemd service on Linux:**
+
+```bash
+sudo tee /etc/systemd/system/breakpointbot.service > /dev/null << 'EOF'
+[Unit]
+Description=BreakPointBot Discord Bot
+After=network.target
+
+[Service]
+Type=simple
+User=opc
+WorkingDirectory=/home/opc/BreakPointBot
+ExecStart=/bin/bash /home/opc/BreakPointBot/start.sh
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable breakpointbot
+sudo systemctl start breakpointbot
+```
+
+Create `start.sh` in the project folder:
+```bash
+#!/bin/bash
+source /home/opc/BreakPointBot/venv/bin/activate
+exec python /home/opc/BreakPointBot/bot.py
+```
+
+**Updating the bot remotely:**
+Once hosted, use the `/update` Discord command (requires Manage Server permission) to pull the latest code from GitHub and restart the bot — no SSH needed.
+
+---
 
 ## Files
 
 | File | Description |
 |------|-------------|
 | `bot.py` | Main bot (all logic) |
+| `start.sh` | Startup script for systemd (activates venv) |
 | `requirements.txt` | Python dependencies |
 | `.env` | Your tokens (not committed to git — keep private!) |
-| `debug_menu.py` | Dev utility: test menu scraping without running the bot |
-
-## Requirements
-
-- Python 3.11+
-- discord.py >= 2.3
-- aiohttp
-- beautifulsoup4
-- anthropic
-- python-dotenv
