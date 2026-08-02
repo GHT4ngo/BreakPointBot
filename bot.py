@@ -11,8 +11,7 @@ import datetime
 import os
 import re
 import base64
-import sys
-import subprocess
+from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 import aiohttp
 from bs4 import BeautifulSoup
@@ -20,7 +19,15 @@ from bs4 import BeautifulSoup
 load_dotenv()
 TOKEN             = os.getenv("DISCORD_TOKEN")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
-REPO_DIR          = os.path.dirname(os.path.abspath(__file__))
+STOCKHOLM         = ZoneInfo("Europe/Stockholm")
+
+
+def now_stockholm() -> datetime.datetime:
+    return datetime.datetime.now(STOCKHOLM)
+
+
+def today_stockholm() -> datetime.date:
+    return now_stockholm().date()
 
 # ─── ANSI Colors (used inside ```ansi code blocks) ─────────────────────────
 E   = "\u001b"
@@ -148,11 +155,11 @@ def date_sv(d: datetime.date) -> str:
     return f"{DAYS_SV[d.weekday()]} {d.day} {MONTHS_SV[d.month]}"
 
 def today_sv() -> str:
-    return date_sv(datetime.date.today())
+    return date_sv(today_stockholm())
 
 def get_target_date(offset: int) -> datetime.date | None:
     """Return today + offset days if it falls Mon–Fri of the current week, else None."""
-    today  = datetime.date.today()
+    today  = today_stockholm()
     target = today + datetime.timedelta(days=offset)
     # Must be a weekday
     if target.weekday() > 4:
@@ -174,13 +181,13 @@ _CACHE_TTL  = datetime.timedelta(days=7)
 
 def _cache_get(key: tuple) -> object | None:
     entry = _menu_cache.get(key)
-    if entry and datetime.datetime.now() - entry[0] < _CACHE_TTL:
+    if entry and now_stockholm() - entry[0] < _CACHE_TTL:
         return entry[1]
     return None
 
 
 def _cache_set(key: tuple, data: object) -> None:
-    _menu_cache[key] = (datetime.datetime.now(), data)
+    _menu_cache[key] = (now_stockholm(), data)
 
 
 async def cached_dalanisse(target_date: datetime.date) -> dict:
@@ -257,7 +264,7 @@ async def scrape_dalanisse(target_date: datetime.date | None = None) -> dict:
     Returns { 'date', 'today': [dish  price, ...], 'always': [...] }
     """
     if target_date is None:
-        target_date = datetime.date.today()
+        target_date = today_stockholm()
     html = await fetch_html(DALANISSE_URL)
     if not html:
         return {"date": date_sv(target_date), "today": ["Could not reach Dalanissen."], "always": []}
@@ -379,7 +386,7 @@ async def scrape_livet(target_date: datetime.date | None = None) -> list[str]:
     Falls back to a link if anything fails.
     """
     if target_date is None:
-        target_date = datetime.date.today()
+        target_date = today_stockholm()
     d_str = date_sv(target_date)
 
     if not ANTHROPIC_API_KEY:
@@ -473,8 +480,6 @@ def _livet_lines(livet: list[str]) -> list[str]:
 def _build_dn_block(dn: dict) -> list[str]:
     lines = [
         f"{MG}DALANISSEN{R}",
-        f"{YL}155 kr / r\u00e4tt{R}",
-        "",
         f"{WH}{dn['date']}{R}",
         f"{MG}──────────────────────────{R}",
         "",
@@ -596,7 +601,7 @@ async def run_timer(
         if not timer:
             return
 
-        now        = datetime.datetime.now()
+        now        = now_stockholm()
         end_time   = timer["end_time"]
         total_secs = max((end_time - start_time).total_seconds(), 1)
         elapsed    = (now - start_time).total_seconds()
@@ -683,22 +688,19 @@ async def _purge_channel(channel: discord.TextChannel) -> None:
 
 
 def _parse_end_time(end_str: str) -> datetime.datetime | None:
-    """Parse HH:MM (or H:MM) into a datetime today. Returns tomorrow's time if already past."""
+    """Parse HH:MM (or HH.MM) into a Stockholm datetime for today."""
     for fmt in ("%H:%M", "%H.%M"):
         try:
             t = datetime.datetime.strptime(end_str.strip(), fmt)
-            now = datetime.datetime.now()
-            end = now.replace(hour=t.hour, minute=t.minute, second=0, microsecond=0)
-            if end <= now:
-                end += datetime.timedelta(days=1)
-            return end
+            now = now_stockholm()
+            return now.replace(hour=t.hour, minute=t.minute, second=0, microsecond=0)
         except ValueError:
             continue
     return None
 
 
 async def _start_timer(interaction: discord.Interaction, kind: str, minutes: int, end: str | None = None):
-    now = datetime.datetime.now()
+    now = now_stockholm()
 
     if end is not None:
         end_time = _parse_end_time(end)
@@ -711,7 +713,7 @@ async def _start_timer(interaction: discord.Interaction, kind: str, minutes: int
         total_secs = int((end_time - now).total_seconds())
         if total_secs < 60:
             await interaction.response.send_message(
-                f"```ansi\n{RD}[ ERROR ]{R}  End time must be at least 1 minute from now.\n```",
+                f"```ansi\n{RD}[ ERROR ]{R}  End time must be later today and at least 1 minute away.\n```",
                 ephemeral=True,
             )
             return
@@ -742,7 +744,7 @@ async def _start_timer(interaction: discord.Interaction, kind: str, minutes: int
     menu_messages: list[discord.Message] = []
 
     if kind == "LUNCH":
-        target = datetime.date.today()
+        target = today_stockholm()
         dn, livet = await asyncio.gather(cached_dalanisse(target), cached_livet(target))
         for content in build_combined_menu(dn, livet):
             m = await interaction.channel.send(content=content)
@@ -834,6 +836,7 @@ async def cmd_menu(
 
 
 @bot.tree.command(name="ping", description="Toggle pings when a timer ends")
+@app_commands.checks.has_permissions(manage_guild=True)
 async def cmd_ping(interaction: discord.Interaction):
     gid       = interaction.guild_id
     new_state = not bot.ping_enabled.get(gid, False)
@@ -873,7 +876,7 @@ async def cmd_extend(interaction: discord.Interaction, minutes: int):
         return
 
     new_end = timer["end_time"] + datetime.timedelta(minutes=minutes)
-    if new_end <= datetime.datetime.now() + datetime.timedelta(seconds=30):
+    if new_end <= now_stockholm() + datetime.timedelta(seconds=30):
         await interaction.response.send_message(
             f"```ansi\n{RD}[ ERROR ]{R}  Can't reduce timer past the current time.\n```",
             ephemeral=True,
@@ -931,11 +934,9 @@ async def cmd_help(interaction: discord.Interaction):
             "  restaurant: dalanissen | livet (default: both)\n"
             "  day: -4 to +4 within this week (0 = today)"),
         row("/ping", "",
-            "Toggle @everyone ping when a timer ends."),
+            "Toggle @everyone ping when a timer ends (admin)."),
         row("/lock", "",
             "Lock this channel (admin) -- auto-deletes non-bot messages."),
-        row("/update", "",
-            "Pull latest code from GitHub and restart (admin)."),
         row("/help", "",
             "Show this message."),
         "```",
@@ -952,47 +953,8 @@ async def lock_error(interaction: discord.Interaction, error: app_commands.AppCo
     )
 
 
-@bot.tree.command(name="update", description="Pull latest code from GitHub and restart (admin)")
-@app_commands.checks.has_permissions(manage_guild=True)
-async def cmd_update(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True)
-
-    try:
-        result = subprocess.run(
-            ["git", "pull", "origin", "main"],
-            cwd=REPO_DIR,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        output = (result.stdout + result.stderr).strip() or "No output."
-        ok = result.returncode == 0
-    except FileNotFoundError:
-        await interaction.followup.send(
-            f"```ansi\n{RD}[ UPDATE ]{R}  git is not installed.\n```", ephemeral=True
-        )
-        return
-    except Exception as e:
-        await interaction.followup.send(
-            f"```ansi\n{RD}[ UPDATE ]{R}  {e}\n```", ephemeral=True
-        )
-        return
-
-    status = GN if ok else RD
-    label  = "Update successful — restarting…" if ok else "Update failed."
-    await interaction.followup.send(
-        f"```ansi\n{status}[ UPDATE ]{R}  {label}\n\n{DIM}{output}{R}\n```",
-        ephemeral=True,
-    )
-
-    if ok:
-        # Small delay so the message is delivered before the process exits
-        await asyncio.sleep(1)
-        os.execv(sys.executable, [sys.executable] + sys.argv)
-
-
-@cmd_update.error
-async def update_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+@cmd_ping.error
+async def ping_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
     await interaction.response.send_message(
         "You need **Manage Server** permission to use this.", ephemeral=True
     )
